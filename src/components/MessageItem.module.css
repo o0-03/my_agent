@@ -1,0 +1,262 @@
+/* 消息行布局 */
+.messageRow {
+  display: flex;
+  width: 100%;
+}
+
+.messageBubbleWrapper {
+  display: flex;
+  gap: 12px;
+}
+
+.userRow {
+  justify-content: flex-end;
+}
+
+.assistantRow {
+  justify-content: flex-start;
+}
+
+/* 消息气泡 */
+.messageBubble {
+  padding: 6px 16px;
+  border-radius: 12px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-width: 80%;
+  min-width: 100px;
+}
+
+.userBubble {
+  background: var(--primary-color);
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+.assistantBubble {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.searchTitle {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.searchText {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.searchResults {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.thinkingText {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.thinkingTitle {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.messageContentInner {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 时间戳 */
+.messageTimestamp {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  text-align: right;
+}
+
+.userBubble .messageTimestamp {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.assistantBubble .messageTimestamp {
+  color: var(--text-tertiary);
+}
+
+/* 打字机光标效果 */
+.typewriterCursor {
+  display: inline-block;
+  width: 2px;
+  margin-left: 2px;
+  background-color: currentColor;
+  animation: blink 1s infinite;
+  vertical-align: baseline;
+  height: 1.2em;
+  background-color: var(--primary-color);
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Markdown 样式 */
+.messageText {
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.messageText h1,
+.messageText h2,
+.messageText h3,
+.messageText h4 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.messageText h1 {
+  font-size: 1.5em;
+}
+.messageText h2 {
+  font-size: 1.3em;
+}
+.messageText h3 {
+  font-size: 1.2em;
+}
+.messageText h4 {
+  font-size: 1.1em;
+}
+
+.messageText ul,
+.messageText ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.messageText li {
+  margin: 0.25em 0;
+}
+
+.messageText blockquote {
+  margin: 0.5em 0;
+  padding-left: 1em;
+  border-left: 3px solid #ccc;
+  color: var(--text-secondary);
+}
+
+.messageText code {
+  background-color: var(--bg-secondary);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 0.9em;
+}
+
+.messageText pre {
+  background-color: var(--bg-secondary);
+  padding: 0.75em;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.messageText pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+.messageText strong {
+  font-weight: 600;
+}
+
+.messageText em {
+  font-style: italic;
+}
+
+.messageText a {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+.messageText hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 1em 0;
+}
+
+.messageText p {
+  margin: 0 0 0.5em 0;
+}
+
+.messageText p:last-child {
+  margin-bottom: 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .messageBubble {
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: 13px;
+    max-width: 60%;
+  }
+
+  .searchContainer,
+  .thinkingContainer {
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+
+  .searchHeader,
+  .thinkingHeader {
+    font-size: 12px;
+  }
+
+  .messageTimestamp {
+    font-size: 11px;
+  }
+
+  .messageText h1 {
+    font-size: 1.3em;
+  }
+  .messageText h2 {
+    font-size: 1.2em;
+  }
+  .messageText h3 {
+    font-size: 1.1em;
+  }
+
+  .messageText ul,
+  .messageText ol {
+    padding-left: 1.2em;
+  }
+
+  .messageText pre {
+    padding: 0.5em;
+    font-size: 0.85em;
+  }
+}
+
+@media (max-width: 480px) {
+  .messageBubble {
+    padding: 5px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .messageTimestamp {
+    font-size: 10px;
+  }
+}
