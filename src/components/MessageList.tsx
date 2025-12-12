@@ -17,7 +17,10 @@ interface MessageListProps {
   messagesEndRef: React.RefObject<HTMLDivElement>;
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+const MessageList: React.FC<MessageListProps> = ({
+  messages,
+  messagesEndRef,
+}) => {
   // 欢迎界面
   if (messages.length === 0) {
     return (

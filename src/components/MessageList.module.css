@@ -12,8 +12,8 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  height: 72%;
   width: 100%;
-  height: 100%;
   font-size: 24px;
   gap: 12px;
 }
@@ -83,7 +83,6 @@
   }
 }
 
-/* 消息文本样式 */
 .message-text {
   line-height: 1.6;
   white-space: pre-wrap;

@@ -7,7 +7,6 @@ import ConversationSidebar from '../components/ConversationSidebar';
 import MessageList from '../components/MessageList';
 import type { Conversation, Message, SearchResultItem } from '../types';
 
-// 从 API 加载对话
 const loadDatabaseConversation = async (
   conversationId: string,
 ): Promise<Message[]> => {
@@ -26,7 +25,6 @@ const loadDatabaseConversation = async (
       conversationMessages = data.data.messages || [];
     }
 
-    // 确保消息格式正确
     return conversationMessages.map(item => {
       const message: Message = {
         id: String(item.id),
@@ -55,6 +53,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [useDeepThinking, setUseDeepThinking] = useState(false);
   const [useWebSearch, setUseWebSearch] = useState(false);
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
     return (
@@ -62,6 +61,23 @@ export default function HomePage() {
       (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
     );
   });
+
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalConversations, setTotalConversations] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | 'archived'>('all');
 
   const toggleTheme = useCallback(() => {
     const newTheme = !isDarkMode;
@@ -93,47 +109,6 @@ export default function HomePage() {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
-  // 滚动控制相关状态
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // 对话相关状态
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<
-    string | null
-  >(null);
-  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
-
-  // 分页相关状态
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [totalConversations, setTotalConversations] = useState(0);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'archived'>('all');
-
-  const isAtBottom = useCallback(() => {
-    if (!scrollContainerRef.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } =
-      scrollContainerRef.current;
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-    return distanceFromBottom <= 50;
-  }, []);
-
-  const handleScroll = useCallback(() => {
-    const atBottom = isAtBottom();
-    if (atBottom && isUserScrolling) {
-      setIsUserScrolling(false);
-      setShouldAutoScroll(true);
-    }
-    if (!atBottom && shouldAutoScroll) {
-      setIsUserScrolling(true);
-      setShouldAutoScroll(false);
-    }
-  }, [isUserScrolling, shouldAutoScroll, isAtBottom]);
-
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current && shouldAutoScroll) {
       messagesEndRef.current.scrollIntoView({
@@ -154,32 +129,49 @@ export default function HomePage() {
     if (!container) return;
 
     let scrollTimer: NodeJS.Timeout;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      const atBottom = distanceFromBottom <= 100;
+
+      if (!atBottom && shouldAutoScroll) {
+        setShouldAutoScroll(false);
+      }
+    };
+
     const debouncedHandleScroll = () => {
       clearTimeout(scrollTimer);
       scrollTimer = setTimeout(handleScroll, 100);
     };
+
     container.addEventListener('scroll', debouncedHandleScroll);
-    if (!isAtBottom()) {
-      setIsUserScrolling(true);
-      setShouldAutoScroll(false);
-    }
     return () => {
       container.removeEventListener('scroll', debouncedHandleScroll);
       clearTimeout(scrollTimer);
     };
-  }, [handleScroll, isAtBottom]);
+  }, [shouldAutoScroll]);
 
   const loadConversations = useCallback(
     async (page = 1, loadMore = false) => {
+      console.log('loadConversations called', {
+        page,
+        loadMore,
+        searchTerm,
+        activeTab,
+      });
+
       if (loadMore) {
         setIsLoadingMore(true);
       } else {
         setIsLoadingConversations(true);
-        setCurrentPage(1);
+        if (page === 1) {
+          setCurrentPage(1);
+        }
       }
 
       try {
         let apiUrl = `/api/conversations?page=${page}&pageSize=20`;
+
         if (searchTerm) {
           apiUrl += `&search=${encodeURIComponent(searchTerm)}`;
         }
@@ -196,7 +188,13 @@ export default function HomePage() {
             const hasMoreData = data.data?.hasMore || false;
 
             if (loadMore) {
-              setConversations(prev => [...prev, ...apiConversations]);
+              setConversations(prev => {
+                const existingIds = new Set(prev.map(c => c.id));
+                const newConversations = apiConversations.filter(
+                  (c: { id: string }) => !existingIds.has(c.id),
+                );
+                return [...prev, ...newConversations];
+              });
               setCurrentPage(page);
             } else {
               setConversations(apiConversations);
@@ -205,7 +203,6 @@ export default function HomePage() {
             setTotalConversations(total);
             setHasMore(hasMoreData);
 
-            // 如果有当前对话ID，加载该对话的消息
             const conversationId = data.data?.currentConversationId;
             if (conversationId) {
               const conversationMessages =
@@ -241,24 +238,25 @@ export default function HomePage() {
     [searchTerm, activeTab],
   );
 
-  const handleSidebarScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      const target = e.currentTarget;
-      const isAtBottom =
-        target.scrollHeight - target.scrollTop <= target.clientHeight + 100;
-      if (isAtBottom && hasMore && !isLoadingMore && !isLoadingConversations) {
-        const nextPage = currentPage + 1;
-        loadConversations(nextPage, true);
-      }
-    },
-    [
-      hasMore,
-      isLoadingMore,
-      isLoadingConversations,
-      currentPage,
-      loadConversations,
-    ],
-  );
+  const handleLoadMore = useCallback(async () => {
+    if (!hasMore || isLoadingMore || isLoadingConversations) return;
+
+    setIsLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      await loadConversations(nextPage, true);
+    } catch (error) {
+      console.error('加载更多对话失败:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [
+    hasMore,
+    isLoadingMore,
+    isLoadingConversations,
+    currentPage,
+    loadConversations,
+  ]);
 
   const createNewConversation = async (
     initialMessage?: string,
@@ -339,16 +337,10 @@ export default function HomePage() {
 
       if (response.ok) {
         await loadConversations(1, false);
+
         if (currentConversationId === conversationId) {
-          const availableConversations = conversations.filter(
-            c => c.id !== conversationId,
-          );
-          if (availableConversations.length > 0) {
-            await handleSwitchConversation(availableConversations[0].id);
-          } else {
-            setCurrentConversationId(null);
-            setMessages([]);
-          }
+          setCurrentConversationId(null);
+          setMessages([]);
         }
       }
     } catch (error) {
@@ -366,45 +358,6 @@ export default function HomePage() {
       console.error('创建对话失败:', error);
     }
   };
-
-  const handleSearchConversations = useCallback(
-    async (term: string) => {
-      setSearchTerm(term);
-      if (term.trim() === '') {
-        await loadConversations(1, false);
-      } else {
-        setIsLoadingConversations(true);
-        try {
-          const response = await fetch(
-            `/api/conversations?search=${encodeURIComponent(term)}&page=1&pageSize=20`,
-          );
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-              setConversations(data.data?.conversations || []);
-              setTotalConversations(data.data?.total || 0);
-              setHasMore(data.data?.hasMore || false);
-              setCurrentPage(1);
-            }
-          }
-        } catch (error) {
-          console.error('搜索对话失败:', error);
-        } finally {
-          setIsLoadingConversations(false);
-        }
-      }
-    },
-    [loadConversations],
-  );
-
-  const handleTabChange = useCallback(
-    async (tab: 'all' | 'archived') => {
-      setActiveTab(tab);
-      setCurrentPage(1);
-      await loadConversations(1, false);
-    },
-    [loadConversations],
-  );
 
   const connectToSSE = async (
     userInput: string,
@@ -628,7 +581,7 @@ export default function HomePage() {
 
   useEffect(() => {
     loadConversations(1, false);
-  }, [loadConversations]);
+  }, []);
 
   return (
     <div className="chat-container">
@@ -643,6 +596,10 @@ export default function HomePage() {
           conversations={conversations}
           currentConversationId={currentConversationId}
           isLoading={isLoadingConversations}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          totalConversations={totalConversations}
+          onLoadMore={handleLoadMore}
           onCreateConversation={handleCreateConversation}
           onSwitchConversation={handleSwitchConversation}
           onDeleteConversation={handleDeleteConversation}

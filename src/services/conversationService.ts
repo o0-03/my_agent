@@ -1,9 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
 import { connectToMongoDB } from '../lib/mongodb';
-// /src/services/conversationService.ts
 import { ConversationModel } from '../models/Conversation';
-import type { Conversation, Message, TodoItem } from '../types';
+import type {
+  Conversation,
+  Message,
+  TodoItem,
+  HistoryMessage,
+  SearchResultItem,
+} from '../types';
 
+// 工具函数
 const formatMessageForSave = (message: Message): any => {
   const formattedMessage: any = {
     id: message.id,
@@ -104,7 +110,6 @@ const formatMessageFromDB = (message: any): Message => {
 const ensureConnection = async (): Promise<boolean> => {
   try {
     await connectToMongoDB();
-    console.log('MongoDB 连接成功');
     return true;
   } catch (error) {
     console.error('MongoDB 连接失败:', error);
@@ -112,6 +117,110 @@ const ensureConnection = async (): Promise<boolean> => {
   }
 };
 
+const buildHistoryContext = (
+  history: HistoryMessage[],
+  maxMessages = 3,
+  showIndex = true,
+): string => {
+  if (history.length === 0) {
+    return '';
+  }
+
+  const title = showIndex ? '对话历史回顾：' : '对话上下文：';
+  let context = `\n\n**${title}**\n`;
+
+  const messages = history.slice(-maxMessages);
+  messages.forEach((msg, index) => {
+    const roleName = msg.role === 'user' ? '用户' : '助理';
+    const prefix = showIndex ? `${index + 1}. ` : '';
+    context += `${prefix}${roleName}: ${msg.content}\n`;
+  });
+
+  return context;
+};
+
+const extractInterestAndLevel = (
+  userInput: string,
+  history: HistoryMessage[],
+): { interest: string; level: string } => {
+  const allText = [...history.map(h => h.content), userInput].join(' ');
+
+  const interests = ['健身', '编程', '音乐', '绘画', '舞蹈', '烹饪', '阅读'];
+  const levelKeywords = {
+    beginner: ['新手', '初学者', '小白', '刚入门'],
+    intermediate: ['中级', '有一定基础', '学过一些'],
+    advanced: ['高级', '精通', '专家', '熟练'],
+  };
+
+  let foundInterest = '通用技能';
+  for (const interest of interests) {
+    if (allText.includes(interest)) {
+      foundInterest = interest;
+      break;
+    }
+  }
+
+  let foundLevel = 'beginner';
+  for (const [level, keywords] of Object.entries(levelKeywords)) {
+    if (keywords.some(keyword => allText.includes(keyword))) {
+      foundLevel = level;
+      break;
+    }
+  }
+
+  return { interest: foundInterest, level: foundLevel };
+};
+
+const buildSearchQuery = (
+  toolType: string,
+  userInput: string,
+  history: HistoryMessage[],
+): string => {
+  const { interest, level } = extractInterestAndLevel(userInput, history);
+
+  const queryTemplates: Record<string, string> = {
+    todo: `${userInput} 任务规划 最佳实践 时间管理`,
+    goal: `${interest}学习目标 ${level}水平 最新方法`,
+    search: userInput,
+  };
+
+  let baseQuery = queryTemplates[toolType] || userInput;
+
+  if (history.length > 0) {
+    const lastUserMessages = history
+      .filter(h => h.role === 'user')
+      .slice(-2)
+      .map(h => h.content);
+    if (lastUserMessages.length > 0) {
+      baseQuery = `${baseQuery} ${lastUserMessages.join(' ')}`;
+    }
+  }
+
+  return baseQuery;
+};
+
+const formatSearchResults = (
+  results: SearchResultItem[],
+  includeSources = true,
+): string => {
+  if (results.length === 0) {
+    return '未找到相关信息。';
+  }
+
+  let formatted = '';
+  results.forEach((item, index) => {
+    formatted += `${index + 1}. **${item.title}**\n`;
+    formatted += `   ${item.content}\n`;
+    if (includeSources && item.url) {
+      formatted += `   来源: ${item.url}\n`;
+    }
+    formatted += '\n';
+  });
+
+  return formatted;
+};
+
+// 对话服务函数
 export async function getUserConversations(
   userId: string,
   page = 1,
@@ -175,7 +284,6 @@ export async function getUserConversations(
   }
 }
 
-// 获取已归档对话
 export async function getArchivedConversations(
   userId: string,
   page = 1,
@@ -187,8 +295,6 @@ export async function getArchivedConversations(
   pageSize: number;
   hasMore: boolean;
 }> {
-  console.log(`获取用户 ${userId} 的已归档对话 - 第${page}页`);
-
   try {
     await ensureConnection();
 
@@ -232,7 +338,6 @@ export async function getArchivedConversations(
   }
 }
 
-// 搜索对话
 export async function searchConversations(
   userId: string,
   query: string,
@@ -294,7 +399,6 @@ export async function searchConversations(
   }
 }
 
-// 创建新对话
 export async function createConversation(
   userId: string,
   data: { title?: string; initialMessage?: string },
@@ -344,7 +448,6 @@ export async function createConversation(
   }
 }
 
-// 获取单个对话
 export async function getConversation(
   userId: string,
   conversationId: string,
@@ -385,7 +488,6 @@ export async function getConversation(
   }
 }
 
-// 添加消息到对话
 export async function addMessage(
   userId: string,
   conversationId: string,
@@ -451,7 +553,6 @@ export async function addMessage(
   }
 }
 
-// 更新对话标题
 export async function updateTitle(
   userId: string,
   conversationId: string,
@@ -496,13 +597,10 @@ export async function updateTitle(
   }
 }
 
-// 归档对话
 export async function archiveConversation(
   userId: string,
   conversationId: string,
 ): Promise<boolean> {
-  console.log(`归档对话: ${conversationId}`);
-
   try {
     await ensureConnection();
 
@@ -525,7 +623,6 @@ export async function archiveConversation(
   }
 }
 
-// 删除对话
 export async function deleteConversation(
   userId: string,
   conversationId: string,
@@ -549,6 +646,13 @@ export async function deleteConversation(
   }
 }
 
+export const contextUtils = {
+  buildHistoryContext,
+  extractInterestAndLevel,
+  buildSearchQuery,
+  formatSearchResults,
+};
+
 export const conversationService = {
   getUserConversations,
   getArchivedConversations,
@@ -559,6 +663,7 @@ export const conversationService = {
   updateTitle,
   archiveConversation,
   deleteConversation,
+  contextUtils,
 };
 
 export default conversationService;

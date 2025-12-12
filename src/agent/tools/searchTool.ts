@@ -1,8 +1,8 @@
+// file name: tools/SearchTool.ts (确保格式兼容)
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
-import type { SearchResultItem } from '../../types';
+import type { SearchResult, SearchResultItem } from '../../types';
 
-// Tavily搜索工具
 export const createSearchTool = () => {
   return new DynamicStructuredTool({
     name: 'web_search',
@@ -11,7 +11,7 @@ export const createSearchTool = () => {
       query: z.string().describe('搜索关键词'),
       maxResults: z.number().min(1).max(10).default(5).describe('最大结果数'),
     }),
-    func: async ({ query, maxResults }) => {
+    func: async ({ query, maxResults }): Promise<string> => {
       try {
         console.log(`🔍 开始搜索: "${query}"`);
 
@@ -40,14 +40,11 @@ export const createSearchTool = () => {
 
         const result = await response.json();
 
-        // 格式化搜索结果
         const searchResults: SearchResultItem[] = (result.results || []).map(
           (item: any, index: number) => ({
             title: item.title || `结果 ${index + 1}`,
             url: item.url,
-            content: item.content
-              ? `${item.content.substring(0, 200)}...`
-              : '无内容',
+            content: item.content || '无内容',
             score: item.score,
           }),
         );
@@ -63,22 +60,25 @@ export const createSearchTool = () => {
           content = '未找到相关信息';
         }
 
-        return JSON.stringify({
+        const searchResult: SearchResult = {
           success: true,
           content,
           results: searchResults,
           sources: (result.results || [])
             .map((item: any) => item.url)
             .filter(Boolean),
-        });
+        };
+
+        return JSON.stringify(searchResult);
       } catch (error) {
         console.error('搜索失败:', error);
-        return JSON.stringify({
+        const errorResult: SearchResult = {
           success: false,
           content: `搜索失败: ${error instanceof Error ? error.message : '未知错误'}`,
           results: [],
           sources: [],
-        });
+        };
+        return JSON.stringify(errorResult);
       }
     },
   });

@@ -1,9 +1,23 @@
-// 首先定义 SearchResultItem，因为它被其他类型引用
 export interface SearchResultItem {
   title: string;
   url: string;
   content: string;
   score?: number;
+}
+
+export interface TodoItem {
+  id: string;
+  content: string;
+  priority: 'high' | 'medium' | 'low';
+  estimated_time: number;
+  category: string;
+  completed?: boolean;
+}
+
+export interface TodoListData {
+  type: 'todo_list';
+  title: string;
+  items: TodoItem[];
 }
 
 export interface Message {
@@ -22,7 +36,7 @@ export interface Message {
 }
 
 export interface StreamChunk {
-  type: 'thinking' | 'content' | 'search' | 'metadata' | 'tododata';
+  type: 'thinking' | 'content' | 'search' | 'metadata' | 'tododata' | 'error';
   content: string;
   searchResults?: SearchResultItem[];
   searchTime?: number;
@@ -33,18 +47,23 @@ export interface StreamChunk {
 }
 
 export interface SearchResult {
+  success: boolean;
   content: string;
-  sources?: string[];
   results?: SearchResultItem[];
+  sources?: string[];
+}
+
+export interface HistoryMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }
 
 export interface AgentInput {
   input: string;
   useWebSearch?: boolean;
   useDeepThinking?: boolean;
-  context?: any[];
   conversationId?: string;
-  history?: Array<{ role: string; content: string }>;
+  history?: HistoryMessage[];
 }
 
 export interface PushData {
@@ -60,15 +79,10 @@ export interface PushData {
 
 export interface RequestData {
   message: string;
-  history?: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-  }>;
+  history?: HistoryMessage[];
   useWebSearch?: boolean;
   useDeepThinking?: boolean;
   conversationId?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  context?: any[];
 }
 
 export interface Conversation {
@@ -92,9 +106,10 @@ export interface CreateConversationData {
   initialMessage?: string;
 }
 
-export interface UpdateConversationData {
-  title?: string;
-  messages?: Message[];
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
 }
 
 export interface DoubaoCallOptions {
@@ -112,98 +127,18 @@ export interface DoubaoLangChainOptions {
   maxTokens?: number;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-export interface ApiResponse<T = any> {
-  success: boolean;
-  data?: T;
-  error?: string;
+export type ToolType = 'search' | 'todo' | 'goal' | 'none';
+
+export interface ToolExecutionContext {
+  userInput: string;
+  searchContent: string;
+  thinkingContent: string;
+  history: HistoryMessage[];
+  searchResults?: SearchResultItem[];
 }
 
-export interface ConversationUpdateRequest {
-  title?: string;
-  isArchived?: boolean;
-}
-
-export interface ConversationMessageRequest {
-  message: Message;
-}
-
-export interface UserSession {
-  userId: string;
-  sessionId: string;
-  ip?: string;
-  userAgent?: string;
-  lastActive?: Date;
-}
-
-export interface AppConfig {
-  mongoDbUri: string;
-  volcengineApiKey: string;
-  tavilyApiKey: string;
-  sessionSecret: string;
-}
-
-export interface StreamHandlerOptions {
-  encoder: TextEncoder;
-  controller: ReadableStreamDefaultController;
-  push: (obj: PushData) => void;
-}
-
-export interface ConversationServiceFunctions {
-  getConversation: (
-    userId: string,
-    conversationId: string,
-  ) => Promise<Conversation | null>;
-  createConversation: (
-    userId: string,
-    data: CreateConversationData,
-  ) => Promise<Conversation>;
-  addMessage: (
-    userId: string,
-    conversationId: string,
-    message: Message,
-  ) => Promise<Conversation | null>;
-  updateTitle: (
-    userId: string,
-    conversationId: string,
-    title: string,
-  ) => Promise<Conversation | null>;
-  archiveConversation: (
-    userId: string,
-    conversationId: string,
-  ) => Promise<boolean>;
-  deleteConversation: (
-    userId: string,
-    conversationId: string,
-  ) => Promise<boolean>;
-}
-
-export interface AppError extends Error {
-  code?: string;
-  statusCode?: number;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  details?: any;
-}
-
-export interface SSEEvent {
-  event?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  data: any;
-  id?: string;
-  retry?: number;
-}
-
-export interface TodoItem {
-  id: string;
-  content: string;
-  priority: 'high' | 'medium' | 'low';
-  estimated_time: number;
-  category: string;
-  completed?: boolean;
-}
-
-export interface TodoListData {
-  type: 'todo_list';
-  title: string;
-  items: TodoItem[];
+export interface ToolExecutionResult {
+  response: string;
+  data?: unknown;
+  toolType: ToolType;
 }

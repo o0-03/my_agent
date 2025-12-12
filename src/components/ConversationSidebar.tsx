@@ -1,4 +1,3 @@
-import type React from 'react';
 import { useState, useEffect } from 'react';
 import type { Conversation } from '../types';
 import styles from './ConversationSidebar.module.css';
@@ -7,6 +6,11 @@ interface ConversationSidebarProps {
   conversations: Conversation[];
   currentConversationId: string | null;
   isLoading: boolean;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  totalConversations?: number;
+  onLoadMore?: () => Promise<void>;
+  onSearch?: (searchTerm: string) => void;
   onCreateConversation: () => Promise<void>;
   onSwitchConversation: (conversationId: string) => Promise<void>;
   onDeleteConversation?: (conversationId: string) => Promise<void>;
@@ -17,6 +21,11 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   conversations,
   currentConversationId,
   isLoading,
+  hasMore = false,
+  isLoadingMore = false,
+  totalConversations = 0,
+  onLoadMore,
+  onSearch,
   onCreateConversation,
   onSwitchConversation,
   onDeleteConversation,
@@ -26,18 +35,23 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
     null,
   );
-  const [searchTerm, setSearchTerm] = useState('');
+  const [localSearchTerm, setLocalSearchTerm] = useState('');
 
-  // 过滤对话列表
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (onSearch) onSearch(localSearchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localSearchTerm, onSearch]);
+
   const filteredConversations = conversations.filter(
     conv =>
-      conv.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      conv.title.toLowerCase().includes(localSearchTerm.toLowerCase()) ||
       conv.messages.some(msg =>
-        msg.content.toLowerCase().includes(searchTerm.toLowerCase()),
+        msg.content.toLowerCase().includes(localSearchTerm.toLowerCase()),
       ),
   );
 
-  // 格式化时间显示
   const formatTime = (date: Date) => {
     const now = new Date();
     const diffMs = now.getTime() - new Date(date).getTime();
@@ -54,7 +68,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     });
   };
 
-  // 处理删除确认
   const handleDeleteClick = (e: React.MouseEvent, conversationId: string) => {
     e.stopPropagation();
     setShowDeleteConfirm(conversationId);
@@ -65,7 +78,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     setShowDeleteConfirm(null);
   };
 
-  // 处理归档
   const handleArchiveClick = async (
     e: React.MouseEvent,
     conversationId: string,
@@ -74,16 +86,13 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     if (onArchiveConversation) await onArchiveConversation(conversationId);
   };
 
-  // 获取最后一条消息的预览
   const getLastMessagePreview = (conversation: Conversation) => {
     const lastMessage = conversation.messages[conversation.messages.length - 1];
     if (!lastMessage) return '暂无消息';
-
     const content = lastMessage.content;
     return content.length > 30 ? `${content.substring(0, 30)}...` : content;
   };
 
-  // 侧边栏收起状态
   if (isCollapsed) {
     return (
       <div className={styles['sidebar-collapsed']}>
@@ -109,7 +118,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   return (
     <div className={styles['conversation-sidebar']}>
-      {/* 侧边栏头部 */}
       <div className={styles['sidebar-header']}>
         <div className={styles['sidebar-header-title']}>
           <h3>对话历史</h3>
@@ -129,20 +137,22 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         </div>
       </div>
 
-      {/* 搜索框 */}
       <div className={styles['sidebar-search']}>
         <input
           type="text"
           placeholder="搜索对话..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
+          value={localSearchTerm}
+          onChange={e => setLocalSearchTerm(e.target.value)}
           className={styles['search-input']}
         />
-        {searchTerm && (
+        {localSearchTerm && (
           <button
             type="button"
             className={styles['clear-search']}
-            onClick={() => setSearchTerm('')}
+            onClick={() => {
+              setLocalSearchTerm('');
+              if (onSearch) onSearch('');
+            }}
             title="清除搜索"
           >
             ✕
@@ -150,7 +160,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         )}
       </div>
 
-      {/* 新建对话按钮 */}
       <div className={styles['new-conversation-section']}>
         <button
           type="button"
@@ -163,7 +172,6 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         </button>
       </div>
 
-      {/* 对话列表 */}
       <div className={styles['conversation-list']}>
         {isLoading ? (
           <div className={styles['loading-indicator']}>
@@ -172,14 +180,17 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
           </div>
         ) : filteredConversations.length === 0 ? (
           <div className={styles['empty-state']}>
-            {searchTerm ? (
+            {localSearchTerm ? (
               <>
                 <div className={styles['empty-icon']}>🔍</div>
                 <p>未找到相关对话</p>
                 <button
                   type="button"
                   className={styles['clear-search-btn']}
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => {
+                    setLocalSearchTerm('');
+                    if (onSearch) onSearch('');
+                  }}
                 >
                   清除搜索
                 </button>
@@ -193,97 +204,128 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
             )}
           </div>
         ) : (
-          filteredConversations.map(conversation => (
-            <div
-              key={conversation.id}
-              className={`${styles['conversation-item']} ${
-                currentConversationId === conversation.id ? styles.active : ''
-              }`}
-            >
-              <button
-                type="button"
-                className={styles['conversation-item-main-button']}
-                onClick={() => onSwitchConversation(conversation.id)}
-                aria-label={`切换到对话：${conversation.title}`}
+          <>
+            {filteredConversations.map(conversation => (
+              <div
+                key={conversation.id}
+                className={`${styles['conversation-item']} ${
+                  currentConversationId === conversation.id ? styles.active : ''
+                }`}
               >
-                <div className={styles['conversation-item-main']}>
-                  <div className={styles['conversation-title-row']}>
-                    <span className={styles['conversation-title']}>
-                      {conversation.title}
-                    </span>
-                    {conversation.isArchived && (
-                      <span className={styles['archived-badge']}>已归档</span>
-                    )}
-                  </div>
+                <button
+                  type="button"
+                  className={styles['conversation-item-main-button']}
+                  onClick={() => onSwitchConversation(conversation.id)}
+                  aria-label={`切换到对话：${conversation.title}`}
+                >
+                  <div className={styles['conversation-item-main']}>
+                    <div className={styles['conversation-title-row']}>
+                      <span className={styles['conversation-title']}>
+                        {conversation.title}
+                      </span>
+                      {conversation.isArchived && (
+                        <span className={styles['archived-badge']}>已归档</span>
+                      )}
+                    </div>
 
-                  <div className={styles['conversation-preview']}>
-                    {getLastMessagePreview(conversation)}
-                  </div>
+                    <div className={styles['conversation-preview']}>
+                      {getLastMessagePreview(conversation)}
+                    </div>
 
-                  <div className={styles['conversation-meta']}>
-                    <span className={styles['message-count']}>
-                      {conversation.messages.length}条消息
-                    </span>
-                    <span className={styles['conversation-date']}>
-                      {formatTime(conversation.updatedAt)}
-                    </span>
-                  </div>
-                </div>
-              </button>
-
-              <div className={styles['conversation-actions']}>
-                {onArchiveConversation && !conversation.isArchived && (
-                  <button
-                    type="button"
-                    className={`${styles['action-btn']} ${styles['archive-btn']}`}
-                    onClick={e => handleArchiveClick(e, conversation.id)}
-                    title="归档对话"
-                  >
-                    📁
-                  </button>
-                )}
-
-                {onDeleteConversation && (
-                  <button
-                    type="button"
-                    className={`${styles['action-btn']} ${styles['delete-btn']}`}
-                    onClick={e => handleDeleteClick(e, conversation.id)}
-                    title="删除对话"
-                  >
-                    {showDeleteConfirm === conversation.id ? '确认？' : '🗑️'}
-                  </button>
-                )}
-
-                {showDeleteConfirm === conversation.id && (
-                  <div className={styles['delete-confirm-overlay']}>
-                    <div className={styles['delete-confirm-box']}>
-                      <p>删除此对话？</p>
-                      <div className={styles['delete-confirm-actions']}>
-                        <button
-                          type="button"
-                          className={styles['confirm-btn']}
-                          onClick={() => handleDeleteConfirm(conversation.id)}
-                        >
-                          确认
-                        </button>
-                        <button
-                          type="button"
-                          className={styles['cancel-btn']}
-                          onClick={() => setShowDeleteConfirm(null)}
-                        >
-                          取消
-                        </button>
-                      </div>
+                    <div className={styles['conversation-meta']}>
+                      <span className={styles['message-count']}>
+                        {conversation.messages.length}条消息
+                      </span>
+                      <span className={styles['conversation-date']}>
+                        {formatTime(conversation.updatedAt)}
+                      </span>
                     </div>
                   </div>
+                </button>
+
+                <div className={styles['conversation-actions']}>
+                  {onArchiveConversation && !conversation.isArchived && (
+                    <button
+                      type="button"
+                      className={`${styles['action-btn']} ${styles['archive-btn']}`}
+                      onClick={e => handleArchiveClick(e, conversation.id)}
+                      title="归档对话"
+                    >
+                      📁
+                    </button>
+                  )}
+
+                  {onDeleteConversation && (
+                    <button
+                      type="button"
+                      className={`${styles['action-btn']} ${styles['delete-btn']}`}
+                      onClick={e => handleDeleteClick(e, conversation.id)}
+                      title="删除对话"
+                    >
+                      {showDeleteConfirm === conversation.id ? '确认？' : '🗑️'}
+                    </button>
+                  )}
+
+                  {showDeleteConfirm === conversation.id && (
+                    <div className={styles['delete-confirm-overlay']}>
+                      <div className={styles['delete-confirm-box']}>
+                        <p>删除此对话？</p>
+                        <div className={styles['delete-confirm-actions']}>
+                          <button
+                            type="button"
+                            className={styles['confirm-btn']}
+                            onClick={() => handleDeleteConfirm(conversation.id)}
+                          >
+                            确认
+                          </button>
+                          <button
+                            type="button"
+                            className={styles['cancel-btn']}
+                            onClick={() => setShowDeleteConfirm(null)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {hasMore && !localSearchTerm && onLoadMore && (
+              <div className={styles['load-more-section']}>
+                <button
+                  type="button"
+                  className={styles['load-more-btn']}
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore}
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <span className={styles['loading-spinner-small']} />
+                      加载中...
+                    </>
+                  ) : (
+                    '加载更多对话'
+                  )}
+                </button>
+              </div>
+            )}
+
+            {totalConversations > 0 && !localSearchTerm && (
+              <div className={styles['pagination-info']}>
+                已显示 {filteredConversations.length} / {totalConversations}{' '}
+                个对话
+                {!hasMore && totalConversations > 0 && (
+                  <span className={styles['no-more-text']}> · 没有更多了</span>
                 )}
               </div>
-            </div>
-          ))
+            )}
+          </>
         )}
       </div>
 
-      {/* 底部信息 */}
       <div className={styles['sidebar-footer']}>
         <div className={styles['storage-info']}>
           <span className={styles['storage-icon']}>💾</span>

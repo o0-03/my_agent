@@ -1,18 +1,12 @@
-import { createChains } from 'src/agent';
-import { addMessage } from '../../src/services/conversationService';
-import type {
-  PushData,
-  RequestData,
-  Message,
-  TodoListData,
-} from '../../src/types';
+import serviceFactory from '../../src/services/index';
+import type { RequestData, Message } from '../../src/types';
 
-function getUserId(): string {
-  return 'user_d4y6df';
-}
-
+/**
+ * 流式聊天端点
+ * 原始文件重构，保持接口不变
+ */
 export const post = async ({ data }: { data: RequestData }) => {
-  console.log('=== BFF 开始处理 ===');
+  console.log('=== 流式端点开始处理 ===');
   const {
     message: userInput,
     conversationId,
@@ -21,113 +15,80 @@ export const post = async ({ data }: { data: RequestData }) => {
     history = [],
   } = data;
 
-  console.log('接收到的消息:', userInput);
+  console.log('接收到的消息:', userInput.substring(0, 100));
   console.log('对话ID:', conversationId);
   console.log('深度思考模式:', useDeepThinking ? '开启' : '关闭');
   console.log('网络搜索模式:', useWebSearch ? '开启' : '关闭');
   console.log('历史记录长度:', history.length);
 
   const encoder = new TextEncoder();
+  const streamHandler = serviceFactory.stream.createHandler();
 
   const stream = new ReadableStream({
     async start(controller) {
-      const push = (obj: PushData) => {
+      const push = (obj: any) => {
         const data = `data: ${JSON.stringify(obj)}\n\n`;
         controller.enqueue(encoder.encode(data));
       };
 
       try {
-        // 1. 首先保存用户消息到数据库
+        // 1. 保存用户消息到数据库
         if (conversationId && !conversationId.startsWith('local-')) {
           try {
             const userMessage: Message = {
-              id: `user_${Date.now()}`,
+              id: serviceFactory.utils.generateId(),
               content: userInput,
               role: 'user',
               timestamp: new Date(),
             };
 
-            const userId = getUserId();
-            console.log(
-              `保存用户消息到对话 ${conversationId}:`,
-              userMessage.content.substring(0, 50),
-            );
+            const userId = serviceFactory.utils.getUserId();
+            console.log(`保存用户消息到对话 ${conversationId}`);
 
-            const result = await addMessage(
+            const result = await serviceFactory.conversation.addMessage(
               userId,
               conversationId,
               userMessage,
             );
+
             if (result) {
-              console.log(
-                '用户消息保存成功，对话现在有',
-                result.messages?.length || 0,
-                '条消息',
-              );
               push({
                 type: 'metadata',
                 content: '用户消息已保存',
                 conversationId: conversationId,
                 messageCount: result.messages?.length || 0,
               });
-            } else {
-              console.warn('用户消息保存失败');
             }
           } catch (error) {
             console.error('保存用户消息时出错:', error);
           }
         }
 
-        const chains = createChains();
+        // 2. 处理AI回复
         let aiContent = '';
         let aiThinking = '';
         let aiSearchInfo = '';
         let aiSearchResults: any[] = [];
         let aiSearchTime = 0;
-        let todoData: TodoListData | undefined;
+        let todoData: any;
 
-        let toolChunkCount = 0;
-        const toolStartTime = Date.now();
-        for await (const chunk of chains.interestCoachChain.stream({
-          userInput,
-          useWebSearch,
-          useDeepThinking,
-          history,
-        })) {
-          toolChunkCount++;
+        for await (const chunk of streamHandler(data)) {
+          push(chunk);
 
-          // 处理不同类型的chunk
-          if (chunk.type === 'thinking' && chunk.content.trim().length > 0) {
-            aiThinking += chunk.content || '';
-            push({
-              type: 'thinking',
-              content: chunk.content,
-            });
-          } else if (chunk.type === 'content') {
+          // 收集AI回复内容
+          if (chunk.type === 'content') {
             aiContent += chunk.content || '';
-            push({
-              type: 'content',
-              content: chunk.content,
-            });
+          } else if (chunk.type === 'thinking') {
+            aiThinking += chunk.content || '';
           } else if (chunk.type === 'search') {
             aiSearchInfo = chunk.content || '';
             aiSearchResults = chunk.searchResults || [];
-            push({
-              type: 'search',
-              content: chunk.content,
-              searchResults: chunk.searchResults,
-              searchTime: chunk.searchTime,
-            });
+            aiSearchTime = chunk.searchTime || 0;
           } else if (chunk.type === 'tododata') {
             todoData = chunk.todoData;
-
-            push({
-              type: 'tododata',
-              content: chunk.content || '',
-              todoData: chunk.todoData,
-            });
           }
         }
+
         // 3. 保存AI回复到数据库
         if (
           conversationId &&
@@ -136,7 +97,7 @@ export const post = async ({ data }: { data: RequestData }) => {
         ) {
           try {
             const aiMessage: Message = {
-              id: `ai_${Date.now()}`,
+              id: serviceFactory.utils.generateId(),
               content: aiContent || '已生成TODO列表',
               role: 'assistant',
               timestamp: new Date(),
@@ -148,15 +109,15 @@ export const post = async ({ data }: { data: RequestData }) => {
               todoData: todoData || undefined,
             };
 
-            const userId = getUserId();
-            console.log(
-              `保存AI回复到对话 ${conversationId}:`,
-              aiContent ? aiContent.substring(0, 50) : 'TODO数据',
-              'hasTodoData:',
-              !!todoData,
+            const userId = serviceFactory.utils.getUserId();
+            console.log(`保存AI回复到对话 ${conversationId}`);
+
+            const result = await serviceFactory.conversation.addMessage(
+              userId,
+              conversationId,
+              aiMessage,
             );
 
-            const result = await addMessage(userId, conversationId, aiMessage);
             if (result) {
               push({
                 type: 'metadata',
@@ -165,11 +126,6 @@ export const post = async ({ data }: { data: RequestData }) => {
                 messageCount: result.messages?.length || 0,
                 isLocal: false,
               });
-              console.log(
-                'AI消息保存成功，对话现在有',
-                result.messages?.length || 0,
-                '条消息',
-              );
             }
           } catch (error) {
             console.error('保存AI回复时出错:', error);
@@ -178,10 +134,7 @@ export const post = async ({ data }: { data: RequestData }) => {
               content: '保存对话时遇到问题，但回复已生成',
             });
           }
-        } else if (
-          conversationId?.startsWith('local-') &&
-          (aiContent || todoData)
-        ) {
+        } else if (conversationId?.startsWith('local-')) {
           push({
             type: 'metadata',
             content: '本地对话已更新',

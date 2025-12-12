@@ -6,7 +6,6 @@
 
 .messageBubbleWrapper {
   display: flex;
-  gap: 12px;
 }
 
 .userRow {
@@ -32,6 +31,7 @@
   background: var(--primary-color);
   color: white;
   box-shadow: var(--shadow-md);
+  margin-left: auto;
 }
 .assistantBubble {
   background: var(--bg-card);
@@ -85,18 +85,6 @@
 
 .assistantBubble .messageTimestamp {
   color: var(--text-tertiary);
-}
-
-/* 打字机光标效果 */
-.typewriterCursor {
-  display: inline-block;
-  width: 2px;
-  margin-left: 2px;
-  background-color: currentColor;
-  animation: blink 1s infinite;
-  vertical-align: baseline;
-  height: 1.2em;
-  background-color: var(--primary-color);
 }
 
 @keyframes blink {

@@ -12,7 +12,6 @@ interface MessageItemProps {
 }
 
 const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
-  // 格式化时间
   const formatTime = (dateInput: Date | string | number) => {
     let date: Date;
 
@@ -36,7 +35,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
     });
   };
 
-  // 格式化时长
   const formatDuration = (ms: number) => {
     if (ms < 1000) {
       return `${ms}ms`;
@@ -44,7 +42,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
     return `${(ms / 1000).toFixed(2)}s`;
   };
 
-  // 获取时间戳
   const getTimestamp = () => {
     if (message.timestamp instanceof Date) {
       return message.timestamp;
@@ -58,13 +55,11 @@ const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
     return new Date();
   };
 
-  // 检查是否有搜索信息
   const showSearchInfo = message.searchInfo && message.role === 'assistant';
   const showThinking = message.role === 'assistant' && message.thinking;
   const hasSearchResults =
     message.searchResults && message.searchResults.length > 0;
 
-  // 检查是否有TODO数据
   const hasTodoData =
     message.todoData &&
     message.todoData.type === 'todo_list' &&

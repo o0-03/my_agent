@@ -54,12 +54,42 @@ Markdown 实时渲染: 支持代码块、列表、表格等丰富格式
 
 响应式侧边栏: 对话历史管理，支持归档、搜索、批量操作
 
-# 项目树
 
+# 难点与解决方案
+难点1：流式数据的分类处理
+问题：思考过程、回答内容、结构化数据需要分别处理
+解决方案：
+
+定义统一的 StreamChunk 类型
+
+前端根据 type 字段进行条件渲染
+
+数据库按消息类型存储结构化数据
+
+难点2：工具调用的智能路由
+问题：如何让 AI 自动选择合适的工具
+解决方案：
+
+设计精细的提示词描述工具用途
+
+基于 LLM 分析用户意图
+
+考虑对话历史上下文
+
+难点3：结构化数据的前后端同步
+问题：TODO 列表在前端渲染和后端存储的格式一致性
+解决方案：
+
+定义共享的 TypeScript 类型
+
+统一的序列化/反序列化逻辑
+
+数据库使用子文档存储结构化数据
+
+# 项目树
 ```
 my_agent
 ├─ .browserslistrc
-├─ .env
 ├─ .hintrc
 ├─ .npmrc
 ├─ .nvmrc
@@ -75,15 +105,20 @@ my_agent
 ├─ src
 │  ├─ agent
 │  │  ├─ chains
+│  │  │  ├─ core
+│  │  │  │  ├─ SearchChain.ts
+│  │  │  │  └─ ThinkingChain.ts
+│  │  │  ├─ index.ts
 │  │  │  ├─ interestCoachChain.ts
-│  │  │  └─ todoChain.ts
-│  │  ├─ doubao_langchain.ts
+│  │  │  ├─ orchestrator
+│  │  │  │  └─ MainOrchestrator.ts
+│  │  │  └─ tools
+│  │  │     ├─ GoalChain.ts
+│  │  │     └─ TodoChain.ts
 │  │  ├─ index.ts
 │  │  ├─ interestCoach.ts
 │  │  └─ tools
-│  │     ├─ goalTool.ts
-│  │     ├─ searchTool.ts
-│  │     └─ todoTool.ts
+│  │     └─ searchTool.ts
 │  ├─ components
 │  │  ├─ ChatHeader.module.css
 │  │  ├─ ChatHeader.tsx
@@ -102,7 +137,8 @@ my_agent
 │  ├─ lib
 │  │  └─ mongodb.ts
 │  ├─ models
-│  │  └─ Conversation.ts
+│  │  ├─ Conversation.ts
+│  │  └─ doubao_langchain.ts
 │  ├─ modern-app-env.d.ts
 │  ├─ modern.runtime.ts
 │  ├─ routes
@@ -110,7 +146,10 @@ my_agent
 │  │  ├─ layout.tsx
 │  │  └─ page.tsx
 │  ├─ services
-│  │  └─ conversationService.ts
+│  │  ├─ ContextService.ts
+│  │  ├─ conversationService.ts
+│  │  ├─ index.ts
+│  │  └─ streamService.ts
 │  └─ types
 │     └─ index.ts
 └─ tsconfig.json

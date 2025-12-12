@@ -7,6 +7,7 @@ import {
   AIMessage,
   AIMessageChunk,
   HumanMessage,
+  SystemMessage,
 } from '@langchain/core/messages';
 import type { ChatResult } from '@langchain/core/outputs';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
@@ -45,7 +46,15 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
     this.maxTokens = options.maxTokens || 2000;
   }
 
-  bind(options: any) {
+  _llmType(): string {
+    return 'doubao-langchain';
+  }
+
+  _modelType(): string {
+    return this.model;
+  }
+
+  bind(options: Partial<DoubaoCallOptions>): DoubaoLangChain {
     return new DoubaoLangChain({
       apiKey: this.apiKey,
       model: this.model,
@@ -55,9 +64,34 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
     });
   }
 
+  private formatMessageContent(content: unknown): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .map(item => (typeof item === 'string' ? item : JSON.stringify(item)))
+        .join('\n');
+    }
+    return JSON.stringify(content);
+  }
+
+  private mapMessageTypeToRole(type: string): string {
+    switch (type) {
+      case 'human':
+        return 'user';
+      case 'ai':
+        return 'assistant';
+      case 'system':
+        return 'system';
+      default:
+        return 'user';
+    }
+  }
+
   async _generate(
     messages: BaseMessage[],
-    options?: this['ParsedCallOptions'],
+    options?: DoubaoCallOptions,
   ): Promise<ChatResult> {
     let fullContent = '';
     for await (const chunk of this._streamResponse(messages, options)) {
@@ -76,80 +110,59 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
     };
   }
 
-  private mapMessageTypeToRole(type: string): string {
-    switch (type) {
-      case 'human':
-        return 'user';
-      case 'ai':
-        return 'assistant';
-      case 'system':
-        return 'system';
-      default:
-        return 'user';
-    }
+  private convertToBaseMessages(messages: any[]): BaseMessage[] {
+    return messages.map(msg => {
+      const content = this.formatMessageContent(msg.content);
+
+      switch (msg.role?.toLowerCase() || msg.type?.toLowerCase()) {
+        case 'system':
+          return new SystemMessage(content);
+        case 'assistant':
+        case 'ai':
+          return new AIMessage(content);
+        case 'user':
+        case 'human':
+        default:
+          return new HumanMessage(content);
+      }
+    });
   }
 
-  private formatMessageContent(content: unknown): string {
-    if (typeof content === 'string') {
-      return content;
-    }
-    if (Array.isArray(content)) {
-      return content
-        .map(item => (typeof item === 'string' ? item : JSON.stringify(item)))
-        .join('\n');
-    }
-    return JSON.stringify(content);
-  }
-
-  _llmType(): string {
-    return 'doubao-langchain';
-  }
-
-  _modelType(): string {
-    return this.model;
-  }
-
-  async *_streamResponse(
-    messages: BaseMessage[],
-    options?: this['ParsedCallOptions'],
+  private async *_streamResponse(
+    messages: any[],
+    options?: DoubaoCallOptions,
   ): AsyncGenerator<StreamChunk> {
-    if (!Array.isArray(messages) || messages.length === 0) {
-      throw new Error('消息必须是 BaseMessage 数组');
-    }
+    // 转换消息为 BaseMessage
+    const baseMessages = this.convertToBaseMessages(messages);
 
-    const firstMsg = messages[0];
-    if (typeof (firstMsg as any)._getType !== 'function') {
-      console.error('消息格式错误，不是 BaseMessage:', firstMsg);
-      throw new Error('消息必须是 BaseMessage 对象');
-    }
-
-    const formattedMessages = messages.map(msg => ({
+    const formattedMessages = baseMessages.map(msg => ({
       role: this.mapMessageTypeToRole(msg._getType()),
       content: this.formatMessageContent(msg.content),
     }));
 
-    const requestBody: any = {
+    const requestBody = {
       model: this.model,
       messages: formattedMessages,
       stream: true,
       temperature: options?.temperature ?? this.temperature,
       max_tokens: options?.maxTokens ?? this.maxTokens,
+      thinking: options?.useDeepThinking
+        ? {
+            type: 'enabled',
+            emit: true,
+            budget_tokens: 2000,
+          }
+        : {
+            type: 'disabled',
+          },
     };
 
-    if (options?.useDeepThinking) {
-      requestBody.thinking = {
-        type: 'enabled',
-        emit: true,
-        budget_tokens: 2000,
-      };
-      console.log('🎯 深度思考模式: ENABLED (emit: true)');
-    } else {
-      requestBody.thinking = {
-        type: 'disabled',
-      };
-      console.log('🎯 深度思考模式: DISABLED');
-    }
-    const startTime = Date.now();
+    console.log('发送请求到豆包API:', {
+      model: this.model,
+      messageCount: formattedMessages.length,
+      useDeepThinking: options?.useDeepThinking,
+    });
+
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
@@ -158,9 +171,6 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
       },
       body: JSON.stringify(requestBody),
     });
-
-    console.log(`API响应时间: ${Date.now() - startTime}ms`);
-    console.log('响应状态:', response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -175,19 +185,15 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let chunkCount = 0;
-    let totalBytes = 0;
 
     try {
       while (true) {
-        chunkCount++;
         const { done, value } = await reader.read();
 
         if (done) {
           break;
         }
 
-        totalBytes += value.length;
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
 
@@ -205,7 +211,6 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
 
               if (data.choices?.[0]?.delta?.reasoning_content) {
                 const thinkingChunk = data.choices[0].delta.reasoning_content;
-
                 yield {
                   type: 'thinking',
                   content: thinkingChunk,
@@ -214,15 +219,15 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
 
               if (data.choices?.[0]?.delta?.content) {
                 const contentChunk = data.choices[0].delta.content;
-
                 yield {
                   type: 'content',
                   content: contentChunk,
                 };
               }
             } catch (e) {
-              console.error('解析流数据失败:', e);
-              console.error('原始数据:', dataStr);
+              if (dataStr.trim() && dataStr.trim() !== '[DONE]') {
+                console.warn('无法解析的流数据:', dataStr.substring(0, 100));
+              }
             }
           }
         }
@@ -232,11 +237,35 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
     }
   }
 
+  async *streamRaw(
+    messages: any[],
+    options?: DoubaoCallOptions,
+  ): AsyncGenerator<StreamChunk> {
+    yield* this._streamResponse(messages, { ...options, stream: true });
+  }
+
+  async invoke(messages: any[], options?: DoubaoCallOptions): Promise<any> {
+    const baseMessages = this.convertToBaseMessages(messages);
+
+    let fullContent = '';
+    for await (const chunk of this._streamResponse(baseMessages, options)) {
+      if (chunk.type === 'content') {
+        fullContent += chunk.content;
+      }
+    }
+
+    return {
+      content: fullContent,
+    };
+  }
+
   async stream(
-    input: BaseMessage[] | string,
+    input: any[] | string,
     options?: DoubaoCallOptions,
   ): Promise<IterableReadableStream<AIMessageChunk>> {
-    const messages = Array.isArray(input) ? input : [new HumanMessage(input)];
+    const messages = Array.isArray(input)
+      ? this.convertToBaseMessages(input)
+      : [new HumanMessage(input)];
 
     const generator = this._streamResponse(messages, options);
 
@@ -255,64 +284,5 @@ export class DoubaoLangChain extends BaseChatModel<DoubaoCallOptions> {
         }
       },
     });
-  }
-
-  async *streamRaw(
-    messages: BaseMessage[],
-    options?: this['ParsedCallOptions'],
-  ): AsyncGenerator<StreamChunk> {
-    const streamOptions = {
-      ...options,
-      stream: true,
-    };
-    yield* this._streamResponse(messages, streamOptions);
-  }
-
-  async debugApiCall(
-    messages: BaseMessage[],
-    options?: this['ParsedCallOptions'],
-  ): Promise<any> {
-    const formattedMessages = messages.map(msg => ({
-      role: this.mapMessageTypeToRole(msg._getType()),
-      content: this.formatMessageContent(msg.content),
-    }));
-
-    const requestBody: any = {
-      model: this.model,
-      messages: formattedMessages,
-      stream: false,
-      temperature: options?.temperature ?? this.temperature,
-      max_tokens: options?.maxTokens ?? this.maxTokens,
-    };
-
-    if (options?.useDeepThinking) {
-      requestBody.thinking = {
-        type: 'enabled',
-        emit: true,
-        budget_tokens: 2000,
-      };
-    } else {
-      requestBody.thinking = {
-        type: 'disabled',
-      };
-    }
-
-    const response = await fetch(this.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`豆包 API 错误: ${response.status} - ${errorText}`);
-    }
-
-    const responseData = await response.json();
-
-    return responseData;
   }
 }
